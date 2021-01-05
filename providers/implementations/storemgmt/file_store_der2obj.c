@@ -77,7 +77,7 @@ static int der2obj_get_params(OSSL_PARAM params[])
     return 1;
 }
 
-static int der2obj_decode(void *provctx, OSSL_CORE_BIO *cin,
+static int der2obj_decode(void *provctx, OSSL_CORE_BIO *cin, int selection,
                           OSSL_CALLBACK *data_cb, void *data_cbarg,
                           OSSL_PASSPHRASE_CALLBACK *pw_cb, void *pw_cbarg)
 {
@@ -130,5 +130,5 @@ static const OSSL_DISPATCH der_to_obj_decoder_functions[] = {
     { 0, NULL }
 };
 
-const OSSL_ALGORITHM der_to_obj_algorithm =
+const OSSL_ALGORITHM ossl_der_to_obj_algorithm =
     { "obj", NULL, der_to_obj_decoder_functions };

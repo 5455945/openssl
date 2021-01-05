@@ -52,7 +52,7 @@ static OSSL_FUNC_kem_settable_ctx_params_fn rsakem_settable_ctx_params;
  * we use that here too.
  */
 typedef struct {
-    OPENSSL_CTX *libctx;
+    OSSL_LIB_CTX *libctx;
     RSA *rsa;
     int op;
 } PROV_RSA_CTX;
@@ -86,7 +86,7 @@ static void *rsakem_newctx(void *provctx)
 
     if (prsactx == NULL)
         return NULL;
-    prsactx->libctx = PROV_LIBRARY_CONTEXT_OF(provctx);
+    prsactx->libctx = PROV_LIBCTX_OF(provctx);
     prsactx->op = KEM_OP_UNDEFINED;
 
     return prsactx;
@@ -126,7 +126,7 @@ static int rsakem_init(void *vprsactx, void *vrsa, int operation)
     RSA_free(prsactx->rsa);
     prsactx->rsa = vrsa;
 
-    if (!rsa_check_key(vrsa, operation == EVP_PKEY_OP_ENCAPSULATE)) {
+    if (!ossl_rsa_check_key(vrsa, operation == EVP_PKEY_OP_ENCAPSULATE)) {
         ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_KEY_LENGTH);
         return 0;
     }
@@ -205,7 +205,7 @@ static int rsasve_gen_rand_bytes(RSA *rsa_pub,
     BN_CTX *bnctx;
     BIGNUM *z, *nminus3;
 
-    bnctx = BN_CTX_secure_new_ex(rsa_get0_libctx(rsa_pub));
+    bnctx = BN_CTX_secure_new_ex(ossl_rsa_get0_libctx(rsa_pub));
     if (bnctx == NULL)
         return 0;
 
@@ -334,7 +334,7 @@ static int rsakem_recover(void *vprsactx, unsigned char *out, size_t *outlen,
     }
 }
 
-const OSSL_DISPATCH rsa_asym_kem_functions[] = {
+const OSSL_DISPATCH ossl_rsa_asym_kem_functions[] = {
     { OSSL_FUNC_KEM_NEWCTX, (void (*)(void))rsakem_newctx },
     { OSSL_FUNC_KEM_ENCAPSULATE_INIT,
       (void (*)(void))rsakem_encapsulate_init },

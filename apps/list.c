@@ -945,6 +945,38 @@ static void list_options_for_command(const char *command)
     BIO_printf(bio_out, "- -\n");
 }
 
+static int is_md_available(const char *name)
+{
+    EVP_MD *md;
+
+    /* Look through providers' digests */
+    ERR_set_mark();
+    md = EVP_MD_fetch(NULL, name, NULL);
+    ERR_pop_to_mark();
+    if (md != NULL) {
+        EVP_MD_free(md);
+        return 1;
+    }
+
+    return (get_digest_from_engine(name) == NULL) ? 0 : 1;
+}
+
+static int is_cipher_available(const char *name)
+{
+    EVP_CIPHER *cipher;
+
+    /* Look through providers' ciphers */
+    ERR_set_mark();
+    cipher = EVP_CIPHER_fetch(NULL, name, NULL);
+    ERR_pop_to_mark();
+    if (cipher != NULL) {
+        EVP_CIPHER_free(cipher);
+        return 1;
+    }
+
+    return (get_cipher_from_engine(name) == NULL) ? 0 : 1;
+}
+
 static void list_type(FUNC_TYPE ft, int one)
 {
     FUNCTION *fp;
@@ -958,6 +990,18 @@ static void list_type(FUNC_TYPE ft, int one)
     for (fp = functions; fp->name != NULL; fp++) {
         if (fp->type != ft)
             continue;
+        switch (ft) {
+        case FT_cipher:
+            if (!is_cipher_available(fp->name))
+                continue;
+            break;
+        case FT_md:
+            if (!is_md_available(fp->name))
+                continue;
+            break;
+        default:
+            break;
+        }
         if (one) {
             BIO_printf(bio_out, "%s\n", fp->name);
         } else {
@@ -1035,6 +1079,72 @@ static void list_pkey_meth(void)
     list_signatures();
     BIO_printf(bio_out, " Key encapsulation:\n");
     list_kems();
+}
+
+DEFINE_STACK_OF(OSSL_PROVIDER)
+static int provider_cmp(const OSSL_PROVIDER * const *a,
+                        const OSSL_PROVIDER * const *b)
+{
+    return strcmp(OSSL_PROVIDER_name(*a), OSSL_PROVIDER_name(*b));
+}
+
+static int collect_providers(OSSL_PROVIDER *provider, void *stack)
+{
+    STACK_OF(OSSL_PROVIDER) *provider_stack = stack;
+
+    sk_OSSL_PROVIDER_push(provider_stack, provider);
+    return 1;
+}
+
+static void list_provider_info(void)
+{
+    STACK_OF(OSSL_PROVIDER) *providers = sk_OSSL_PROVIDER_new(provider_cmp);
+    OSSL_PARAM params[5];
+    char *name, *version, *buildinfo;
+    int status;
+    int i;
+
+    if (providers == NULL) {
+        BIO_printf(bio_err, "ERROR: Memory allocation\n");
+        return;
+    }
+    BIO_printf(bio_out, "Providers:\n");
+    OSSL_PROVIDER_do_all(NULL, &collect_providers, providers);
+    sk_OSSL_PROVIDER_sort(providers);
+    for (i = 0; i < sk_OSSL_PROVIDER_num(providers); i++) {
+        const OSSL_PROVIDER *prov = sk_OSSL_PROVIDER_value(providers, i);
+
+        /* Query the "known" information parameters, the order matches below */
+        params[0] = OSSL_PARAM_construct_utf8_ptr(OSSL_PROV_PARAM_NAME,
+                                                  &name, 0);
+        params[1] = OSSL_PARAM_construct_utf8_ptr(OSSL_PROV_PARAM_VERSION,
+                                                  &version, 0);
+        params[2] = OSSL_PARAM_construct_int(OSSL_PROV_PARAM_STATUS, &status);
+        params[3] = OSSL_PARAM_construct_utf8_ptr(OSSL_PROV_PARAM_BUILDINFO,
+                                                  &buildinfo, 0);
+        params[4] = OSSL_PARAM_construct_end();
+        OSSL_PARAM_set_all_unmodified(params);
+        if (!OSSL_PROVIDER_get_params(prov, params)) {
+            BIO_printf(bio_err, "ERROR: Unable to query provider parameters\n");
+            return;
+        }
+
+        /* Print out the provider information, the params order matches above */
+        BIO_printf(bio_out, "  %s\n", OSSL_PROVIDER_name(prov));
+        if (OSSL_PARAM_modified(params))
+            BIO_printf(bio_out, "    name: %s\n", name);
+        if (OSSL_PARAM_modified(params + 1))
+            BIO_printf(bio_out, "    version: %s\n", version);
+        if (OSSL_PARAM_modified(params + 2))
+            BIO_printf(bio_out, "    status: %sactive\n", status ? "" : "in");
+        if (verbose) {
+            if (OSSL_PARAM_modified(params + 3))
+                BIO_printf(bio_out, "    build info: %s\n", buildinfo);
+            print_param_types("gettable provider parameters",
+                              OSSL_PROVIDER_gettable_params(prov), 4);
+        }
+    }
+    sk_OSSL_PROVIDER_free(providers);
 }
 
 #ifndef OPENSSL_NO_DEPRECATED_3_0
@@ -1151,9 +1261,6 @@ static void list_disabled(void)
 #ifdef OPENSSL_NO_RMD160
     BIO_puts(bio_out, "RMD160\n");
 #endif
-#ifdef OPENSSL_NO_RSA
-    BIO_puts(bio_out, "RSA\n");
-#endif
 #ifdef OPENSSL_NO_SCRYPT
     BIO_puts(bio_out, "SCRYPT\n");
 #endif
@@ -1210,6 +1317,7 @@ typedef enum HELPLIST_CHOICE {
     OPT_KDF_ALGORITHMS, OPT_RANDOM_INSTANCES, OPT_RANDOM_GENERATORS,
     OPT_ENCODERS, OPT_DECODERS, OPT_KEYMANAGERS, OPT_KEYEXCHANGE_ALGORITHMS,
     OPT_KEM_ALGORITHMS, OPT_SIGNATURE_ALGORITHMS, OPT_ASYM_CIPHER_ALGORITHMS,
+    OPT_PROVIDER_INFO,
     OPT_MISSING_HELP, OPT_OBJECTS, OPT_SELECT_NAME,
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     OPT_ENGINES, 
@@ -1228,8 +1336,10 @@ const OPTIONS list_options[] = {
     {"select", OPT_SELECT_NAME, 's', "Select a single algorithm"},
     {"commands", OPT_COMMANDS, '-', "List of standard commands"},
     {"standard-commands", OPT_COMMANDS, '-', "List of standard commands"},
+#ifndef OPENSSL_NO_DEPRECATED_3_0
     {"digest-commands", OPT_DIGEST_COMMANDS, '-',
-     "List of message digest commands"},
+     "List of message digest commands (deprecated)"},
+#endif
     {"digest-algorithms", OPT_DIGEST_ALGORITHMS, '-',
      "List of message digest algorithms"},
     {"kdf-algorithms", OPT_KDF_ALGORITHMS, '-',
@@ -1240,7 +1350,10 @@ const OPTIONS list_options[] = {
      "List of random number generators"},
     {"mac-algorithms", OPT_MAC_ALGORITHMS, '-',
      "List of message authentication code algorithms"},
-    {"cipher-commands", OPT_CIPHER_COMMANDS, '-', "List of cipher commands"},
+#ifndef OPENSSL_NO_DEPRECATED_3_0
+    {"cipher-commands", OPT_CIPHER_COMMANDS, '-', 
+    "List of cipher commands (deprecated)"},
+#endif
     {"cipher-algorithms", OPT_CIPHER_ALGORITHMS, '-',
      "List of cipher algorithms"},
     {"encoders", OPT_ENCODERS, '-', "List of encoding methods" },
@@ -1258,6 +1371,8 @@ const OPTIONS list_options[] = {
      "List of public key algorithms"},
     {"public-key-methods", OPT_PK_METHOD, '-',
      "List of public key methods"},
+    {"providers", OPT_PROVIDER_INFO, '-',
+     "List of provider information"},
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     {"engines", OPT_ENGINES, '-',
      "List of loaded engines"},
@@ -1298,6 +1413,7 @@ int list_main(int argc, char **argv)
         unsigned int asym_cipher_algorithms:1;
         unsigned int pk_algorithms:1;
         unsigned int pk_method:1;
+        unsigned int provider_info:1;
 #ifndef OPENSSL_NO_DEPRECATED_3_0
         unsigned int engines:1;
 #endif
@@ -1377,6 +1493,9 @@ opthelp:
         case OPT_PK_METHOD:
             todo.pk_method = 1;
             break;
+        case OPT_PROVIDER_INFO:
+            todo.provider_info = 1;
+            break;
 #ifndef OPENSSL_NO_DEPRECATED_3_0
         case OPT_ENGINES:
             todo.engines = 1;
@@ -1407,10 +1526,10 @@ opthelp:
         }
         done = 1;
     }
-    if (opt_num_rest() != 0) {
-        BIO_printf(bio_err, "Extra arguments given.\n");
+
+    /* No extra arguments. */
+    if (opt_num_rest() != 0)
         goto opthelp;
-    }
 
     if (todo.commands)
         list_type(FT_general, one);
@@ -1448,6 +1567,8 @@ opthelp:
         list_pkey();
     if (todo.pk_method)
         list_pkey_meth();
+    if (todo.provider_info)
+        list_provider_info();
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     if (todo.engines)
         list_engines();

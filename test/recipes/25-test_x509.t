@@ -16,7 +16,7 @@ use OpenSSL::Test qw/:DEFAULT srctop_file/;
 
 setup("test_x509");
 
-plan tests => 14;
+plan tests => 15;
 
 require_ok(srctop_file('test','recipes','tconversion.pl'));
 
@@ -72,13 +72,16 @@ SKIP: {
 }
 
 subtest 'x509 -- x.509 v1 certificate' => sub {
-    tconversion("x509", srctop_file("test","testx509.pem"));
+    tconversion( -type => 'x509', -prefix => 'x509v1',
+                 -in => srctop_file("test","testx509.pem") );
 };
 subtest 'x509 -- first x.509 v3 certificate' => sub {
-    tconversion("x509", srctop_file("test","v3-cert1.pem"));
+    tconversion( -type => 'x509', -prefix => 'x509v3-1',
+                 -in => srctop_file("test","v3-cert1.pem") );
 };
 subtest 'x509 -- second x.509 v3 certificate' => sub {
-    tconversion("x509", srctop_file("test","v3-cert2.pem"));
+    tconversion( -type => 'x509', -prefix => 'x509v3-2',
+                 -in => srctop_file("test","v3-cert2.pem") );
 };
 
 subtest 'x509 -- pathlen' => sub {
@@ -105,9 +108,10 @@ sub test_errors { # actually tests diagnostics of OSSL_STORE
     my ($expected, $cert, @opts) = @_;
     my $infile = srctop_file('test', 'certs', $cert);
     my @args = qw(openssl x509 -in);
-    push(@args, "$infile", @opts);
+    push(@args, $infile, @opts);
     my $tmpfile = 'out.txt';
-    my $res = !run(app([@args], stderr => $tmpfile));
+    my $res =  grep(/-text/, @opts) ? run(app([@args], stdout => $tmpfile))
+                                    : !run(app([@args], stderr => $tmpfile));
     my $found = 0;
     open(my $in, '<', $tmpfile) or die "Could not open file $tmpfile";
     while(<$in>) {
@@ -116,11 +120,19 @@ sub test_errors { # actually tests diagnostics of OSSL_STORE
         $found = 1 if m/$expected/; # output must include $expected
     }
     close $in;
-    unlink $tmpfile;
+    # $tmpfile is kept to help with investigation in case of failure
     return $res && $found;
 }
 
-ok(test_errors("Can't open any-dir/", "root-cert.pem", '-out', 'any-dir/'),
+# 3 tests for non-existence of spurious OSSL_STORE ASN.1 parse error output.
+# This requires provoking a failure exit of the app after reading input files.
+ok(test_errors("Bad output format", "root-cert.pem", '-outform', 'http'),
    "load root-cert errors");
 ok(test_errors("RC2-40-CBC", "v3-certs-RC2.p12", '-passin', 'pass:v3-certs'),
-   "load v3-certs-RC2 no asn1 errors");
+   "load v3-certs-RC2 no asn1 errors"); # error msg should mention "RC2-40-CBC"
+SKIP: {
+    skip "sm2 not disabled", 1 if !disabled("sm2");
+
+    ok(test_errors("unknown group|unsupported algorithm", "sm2.pem", '-text'),
+       "error loading unsupported sm2 cert");
+}

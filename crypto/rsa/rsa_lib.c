@@ -27,7 +27,7 @@
 #include "crypto/security_bits.h"
 #include "rsa_local.h"
 
-static RSA *rsa_new_intern(ENGINE *engine, OPENSSL_CTX *libctx);
+static RSA *rsa_new_intern(ENGINE *engine, OSSL_LIB_CTX *libctx);
 
 #ifndef FIPS_MODULE
 RSA *RSA_new(void)
@@ -66,24 +66,24 @@ RSA *RSA_new_method(ENGINE *engine)
 }
 #endif
 
-RSA *rsa_new_with_ctx(OPENSSL_CTX *libctx)
+RSA *ossl_rsa_new_with_ctx(OSSL_LIB_CTX *libctx)
 {
     return rsa_new_intern(NULL, libctx);
 }
 
-static RSA *rsa_new_intern(ENGINE *engine, OPENSSL_CTX *libctx)
+static RSA *rsa_new_intern(ENGINE *engine, OSSL_LIB_CTX *libctx)
 {
     RSA *ret = OPENSSL_zalloc(sizeof(*ret));
 
     if (ret == NULL) {
-        RSAerr(0, ERR_R_MALLOC_FAILURE);
+        ERR_raise(ERR_LIB_RSA, ERR_R_MALLOC_FAILURE);
         return NULL;
     }
 
     ret->references = 1;
     ret->lock = CRYPTO_THREAD_lock_new();
     if (ret->lock == NULL) {
-        RSAerr(0, ERR_R_MALLOC_FAILURE);
+        ERR_raise(ERR_LIB_RSA, ERR_R_MALLOC_FAILURE);
         OPENSSL_free(ret);
         return NULL;
     }
@@ -94,7 +94,7 @@ static RSA *rsa_new_intern(ENGINE *engine, OPENSSL_CTX *libctx)
     ret->flags = ret->meth->flags & ~RSA_FLAG_NON_FIPS_ALLOW;
     if (engine) {
         if (!ENGINE_init(engine)) {
-            RSAerr(0, ERR_R_ENGINE_LIB);
+            ERR_raise(ERR_LIB_RSA, ERR_R_ENGINE_LIB);
             goto err;
         }
         ret->engine = engine;
@@ -104,7 +104,7 @@ static RSA *rsa_new_intern(ENGINE *engine, OPENSSL_CTX *libctx)
     if (ret->engine) {
         ret->meth = ENGINE_get_RSA(ret->engine);
         if (ret->meth == NULL) {
-            RSAerr(0, ERR_R_ENGINE_LIB);
+            ERR_raise(ERR_LIB_RSA, ERR_R_ENGINE_LIB);
             goto err;
         }
     }
@@ -118,7 +118,7 @@ static RSA *rsa_new_intern(ENGINE *engine, OPENSSL_CTX *libctx)
 #endif
 
     if ((ret->meth->init != NULL) && !ret->meth->init(ret)) {
-        RSAerr(0, ERR_R_INIT_FAIL);
+        ERR_raise(ERR_LIB_RSA, ERR_R_INIT_FAIL);
         goto err;
     }
 
@@ -189,9 +189,14 @@ int RSA_up_ref(RSA *r)
     return i > 1 ? 1 : 0;
 }
 
-OPENSSL_CTX *rsa_get0_libctx(RSA *r)
+OSSL_LIB_CTX *ossl_rsa_get0_libctx(RSA *r)
 {
     return r->libctx;
+}
+
+void ossl_rsa_set0_libctx(RSA *r, OSSL_LIB_CTX *libctx)
+{
+    r->libctx = libctx;
 }
 
 #ifndef FIPS_MODULE
@@ -654,7 +659,7 @@ const RSA_PSS_PARAMS *RSA_get0_pss_params(const RSA *r)
 }
 
 /* Internal */
-RSA_PSS_PARAMS_30 *rsa_get0_pss_params_30(RSA *r)
+RSA_PSS_PARAMS_30 *ossl_rsa_get0_pss_params_30(RSA *r)
 {
     return &r->pss_params;
 }
@@ -699,9 +704,9 @@ int RSA_pkey_ctx_ctrl(EVP_PKEY_CTX *ctx, int optype, int cmd, int p1, void *p2)
 
 DEFINE_STACK_OF(BIGNUM)
 
-int rsa_set0_all_params(RSA *r, const STACK_OF(BIGNUM) *primes,
-                        const STACK_OF(BIGNUM) *exps,
-                        const STACK_OF(BIGNUM) *coeffs)
+int ossl_rsa_set0_all_params(RSA *r, const STACK_OF(BIGNUM) *primes,
+                             const STACK_OF(BIGNUM) *exps,
+                             const STACK_OF(BIGNUM) *coeffs)
 {
 #ifndef FIPS_MODULE
     STACK_OF(RSA_PRIME_INFO) *prime_infos, *old_infos = NULL;
@@ -797,9 +802,9 @@ int rsa_set0_all_params(RSA *r, const STACK_OF(BIGNUM) *primes,
 
 DEFINE_SPECIAL_STACK_OF_CONST(BIGNUM_const, BIGNUM)
 
-int rsa_get0_all_params(RSA *r, STACK_OF(BIGNUM_const) *primes,
-                        STACK_OF(BIGNUM_const) *exps,
-                        STACK_OF(BIGNUM_const) *coeffs)
+int ossl_rsa_get0_all_params(RSA *r, STACK_OF(BIGNUM_const) *primes,
+                             STACK_OF(BIGNUM_const) *exps,
+                             STACK_OF(BIGNUM_const) *coeffs)
 {
 #ifndef FIPS_MODULE
     RSA_PRIME_INFO *pinfo;

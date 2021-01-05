@@ -1252,9 +1252,7 @@ static int bind_devcrypto(ENGINE *e) {
  * /Richard Levitte, 2017-05-11
  */
 #if 0
-# ifndef OPENSSL_NO_RSA
         && ENGINE_set_RSA(e, devcrypto_rsa)
-# endif
 # ifndef OPENSSL_NO_DSA
         && ENGINE_set_DSA(e, devcrypto_dsa)
 # endif
@@ -1287,9 +1285,20 @@ void engine_load_devcrypto_int(void)
         return;
     }
 
+    ERR_set_mark();
     ENGINE_add(e);
+    /*
+     * If the "add" worked, it gets a structural reference. So either way, we
+     * release our just-created reference.
+     */
     ENGINE_free(e);          /* Loose our local reference */
-    ERR_clear_error();
+    /*
+     * If the "add" didn't work, it was probably a conflict because it was
+     * already added (eg. someone calling ENGINE_load_blah then calling
+     * ENGINE_load_builtin_engines() perhaps).
+     */
+    ERR_pop_to_mark();
+}
 }
 
 #else

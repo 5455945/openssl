@@ -154,8 +154,8 @@ static int drbg_hmac_instantiate_wrapper(void *vdrbg, unsigned int strength,
 {
     PROV_DRBG *drbg = (PROV_DRBG *)vdrbg;
 
-    return PROV_DRBG_instantiate(drbg, strength, prediction_resistance,
-                                 pstr, pstr_len);
+    return ossl_prov_drbg_instantiate(drbg, strength, prediction_resistance,
+                                      pstr, pstr_len);
 }
 
 /*
@@ -182,8 +182,8 @@ static int drbg_hmac_reseed_wrapper(void *vdrbg, int prediction_resistance,
 {
     PROV_DRBG *drbg = (PROV_DRBG *)vdrbg;
 
-    return PROV_DRBG_reseed(drbg, prediction_resistance, ent, ent_len,
-                            adin, adin_len);
+    return ossl_prov_drbg_reseed(drbg, prediction_resistance, ent, ent_len,
+                                 adin, adin_len);
 }
 
 /*
@@ -251,8 +251,8 @@ static int drbg_hmac_generate_wrapper
 {
     PROV_DRBG *drbg = (PROV_DRBG *)vdrbg;
 
-    return PROV_DRBG_generate(drbg, out, outlen, strength,
-                              prediction_resistance, adin, adin_len);
+    return ossl_prov_drbg_generate(drbg, out, outlen, strength,
+                                   prediction_resistance, adin, adin_len);
 }
 
 static int drbg_hmac_uninstantiate(PROV_DRBG *drbg)
@@ -261,7 +261,7 @@ static int drbg_hmac_uninstantiate(PROV_DRBG *drbg)
 
     OPENSSL_cleanse(hmac->K, sizeof(hmac->K));
     OPENSSL_cleanse(hmac->V, sizeof(hmac->V));
-    return PROV_DRBG_uninstantiate(drbg);
+    return ossl_prov_drbg_uninstantiate(drbg);
 }
 
 static int drbg_hmac_uninstantiate_wrapper(void *vdrbg)
@@ -304,7 +304,7 @@ static int drbg_hmac_new(PROV_DRBG *drbg)
 static void *drbg_hmac_new_wrapper(void *provctx, void *parent,
                                    const OSSL_DISPATCH *parent_dispatch)
 {
-    return prov_rand_drbg_new(provctx, parent, parent_dispatch, &drbg_hmac_new,
+    return ossl_rand_drbg_new(provctx, parent, parent_dispatch, &drbg_hmac_new,
                               &drbg_hmac_instantiate, &drbg_hmac_uninstantiate,
                               &drbg_hmac_reseed, &drbg_hmac_generate);
 }
@@ -319,7 +319,7 @@ static void drbg_hmac_free(void *vdrbg)
         ossl_prov_digest_reset(&hmac->digest);
         OPENSSL_secure_clear_free(hmac, sizeof(*hmac));
     }
-    prov_rand_drbg_free(drbg);
+    ossl_rand_drbg_free(drbg);
 }
 
 static int drbg_hmac_get_ctx_params(void *vdrbg, OSSL_PARAM params[])
@@ -346,7 +346,7 @@ static int drbg_hmac_get_ctx_params(void *vdrbg, OSSL_PARAM params[])
             return 0;
     }
 
-    return drbg_get_ctx_params(drbg, params);
+    return ossl_drbg_get_ctx_params(drbg, params);
 }
 
 static const OSSL_PARAM *drbg_hmac_gettable_ctx_params(ossl_unused void *p_ctx)
@@ -364,7 +364,7 @@ static int drbg_hmac_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_DRBG *ctx = (PROV_DRBG *)vctx;
     PROV_DRBG_HMAC *hmac = (PROV_DRBG_HMAC *)ctx->data;
-    OPENSSL_CTX *libctx = PROV_LIBRARY_CONTEXT_OF(ctx->provctx);
+    OSSL_LIB_CTX *libctx = PROV_LIBCTX_OF(ctx->provctx);
     const EVP_MD *md;
 
     if (!ossl_prov_digest_load_from_params(&hmac->digest, params, libctx))
@@ -397,7 +397,7 @@ static int drbg_hmac_set_ctx_params(void *vctx, const OSSL_PARAM params[])
         ctx->min_noncelen = ctx->min_entropylen / 2;
     }
 
-    return drbg_set_ctx_params(ctx, params);
+    return ossl_drbg_set_ctx_params(ctx, params);
 }
 
 static const OSSL_PARAM *drbg_hmac_settable_ctx_params(ossl_unused void *p_ctx)
@@ -412,7 +412,7 @@ static const OSSL_PARAM *drbg_hmac_settable_ctx_params(ossl_unused void *p_ctx)
     return known_settable_ctx_params;
 }
 
-const OSSL_DISPATCH drbg_hmac_functions[] = {
+const OSSL_DISPATCH ossl_drbg_ossl_hmac_functions[] = {
     { OSSL_FUNC_RAND_NEWCTX, (void(*)(void))drbg_hmac_new_wrapper },
     { OSSL_FUNC_RAND_FREECTX, (void(*)(void))drbg_hmac_free },
     { OSSL_FUNC_RAND_INSTANTIATE,
@@ -421,9 +421,9 @@ const OSSL_DISPATCH drbg_hmac_functions[] = {
       (void(*)(void))drbg_hmac_uninstantiate_wrapper },
     { OSSL_FUNC_RAND_GENERATE, (void(*)(void))drbg_hmac_generate_wrapper },
     { OSSL_FUNC_RAND_RESEED, (void(*)(void))drbg_hmac_reseed_wrapper },
-    { OSSL_FUNC_RAND_ENABLE_LOCKING, (void(*)(void))drbg_enable_locking },
-    { OSSL_FUNC_RAND_LOCK, (void(*)(void))drbg_lock },
-    { OSSL_FUNC_RAND_UNLOCK, (void(*)(void))drbg_unlock },
+    { OSSL_FUNC_RAND_ENABLE_LOCKING, (void(*)(void))ossl_drbg_enable_locking },
+    { OSSL_FUNC_RAND_LOCK, (void(*)(void))ossl_drbg_lock },
+    { OSSL_FUNC_RAND_UNLOCK, (void(*)(void))ossl_drbg_unlock },
     { OSSL_FUNC_RAND_SETTABLE_CTX_PARAMS,
       (void(*)(void))drbg_hmac_settable_ctx_params },
     { OSSL_FUNC_RAND_SET_CTX_PARAMS, (void(*)(void))drbg_hmac_set_ctx_params },

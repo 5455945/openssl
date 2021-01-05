@@ -10,7 +10,7 @@
 #include <openssl/err.h>
 #include "crypto/ecx.h"
 
-ECX_KEY *ecx_key_new(OPENSSL_CTX *libctx, ECX_KEY_TYPE type, int haspubkey,
+ECX_KEY *ecx_key_new(OSSL_LIB_CTX *libctx, ECX_KEY_TYPE type, int haspubkey,
                      const char *propq)
 {
     ECX_KEY *ret = OPENSSL_zalloc(sizeof(*ret));
@@ -62,7 +62,7 @@ void ecx_key_free(ECX_KEY *key)
         return;
 
     CRYPTO_DOWN_REF(&key->references, &i, key->lock);
-    REF_PRINT_COUNT("ECX_KEY", r);
+    REF_PRINT_COUNT("ECX_KEY", key);
     if (i > 0)
         return;
     REF_ASSERT_ISNT(i < 0);
@@ -71,6 +71,11 @@ void ecx_key_free(ECX_KEY *key)
     OPENSSL_secure_clear_free(key->privkey, key->keylen);
     CRYPTO_THREAD_lock_free(key->lock);
     OPENSSL_free(key);
+}
+
+void ecx_key_set0_libctx(ECX_KEY *key, OSSL_LIB_CTX *libctx)
+{
+    key->libctx = libctx;
 }
 
 int ecx_key_up_ref(ECX_KEY *key)
